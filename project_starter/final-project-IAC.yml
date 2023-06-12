@@ -1,8 +1,33 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Creates the required network infrastructure for Public and Private routing with Internet access
+
 Parameters:
-  # Paramenters are entirely optional.
-  # but using them will make your cloudformation templates more reusable
-  # use them for things that may change over time, such as instance type,
-  # VPCs and so on.
+  VpcCidr:
+    Description: VPC CIDR block
+    Type: String
+    Default: 10.0.0.0/16
+  
+  PublicSubnet1Cidr:
+    Description: Public subnet CIDR block
+    Type: String
+    Default: 10.0.1.0/24
+
+  PublicSubnet2Cidr:
+    Description: Public subnet CIDR block
+    Type: String
+    Default: 10.0.2.0/24
+
+  PrivateSubnet1Cidr:
+    Description: Private subnet CIDR block
+    Type: String
+    Default: 10.0.3.0/24
+
+  PrivateSubnet2Cidr:
+    Description: Private subnet CIDR block
+    Type: String
+    Default: 10.0.4.0/24
+
+
 Resources:
   # instace profile contains the IAM Role name(s) that we want to associate to our auto scaling EC2 Servers
   # never give too much permissions to your EC2 instances! if they get hacked, the permissions get hacked also!
@@ -10,7 +35,7 @@ Resources:
   VPC:
     Type: AWS::EC2::VPC
     Properties:
-      CidrBlock: 10.0.0.0/16
+      CidrBlock: !Ref VpcCidr
       EnableDnsSupport: true
       EnableDnsHostnames: true
 
@@ -19,28 +44,28 @@ Resources:
     Properties:
       AvailabilityZone: !Select [0, !GetAZs '']
       VpcId: !Ref VPC
-      CidrBlock: 10.0.1.0/24
+      CidrBlock: !Ref PublicSubnet1Cidr
 
   PublicSubnet2:
     Type: AWS::EC2::Subnet
     Properties:
       AvailabilityZone: !Select [1, !GetAZs '']
       VpcId: !Ref VPC
-      CidrBlock: 10.0.2.0/24
+      CidrBlock: !Ref PublicSubnet2Cidr
 
   PrivateSubnet1:
     Type: AWS::EC2::Subnet
     Properties:
       AvailabilityZone: !Select [0, !GetAZs '']
       VpcId: !Ref VPC
-      CidrBlock: 10.0.3.0/24
+      CidrBlock: !Ref PrivateSubnet1Cidr
 
   PrivateSubnet2:
     Type: AWS::EC2::Subnet
     Properties:
       AvailabilityZone: !Select [1, !GetAZs '']
       VpcId: !Ref VPC
-      CidrBlock: 10.0.4.0/24
+      CidrBlock: !Ref PrivateSubnet2Cidr
 
   InternetGateway:
     Type: AWS::EC2::InternetGateway
@@ -50,6 +75,18 @@ Resources:
     Properties:
       VpcId: !Ref VPC
       InternetGatewayId: !Ref InternetGateway
+
+  EIP:
+    Type: AWS::EC2::EIP
+
+  NATGateway:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      SubnetId: !Ref PublicSubnet1
+      AllocationId:
+        Fn::GetAtt:
+          - EIP
+          - AllocationId
 
   PublicRouteTable:
     Type: AWS::EC2::RouteTable
@@ -67,18 +104,6 @@ Resources:
       RouteTableId: !Ref PublicRouteTable
       DestinationCidrBlock: 0.0.0.0/0
       GatewayId: !Ref InternetGateway
-
-  NATGateway:
-    Type: AWS::EC2::NatGateway
-    Properties:
-      SubnetId: !Ref PublicSubnet1
-      AllocationId:
-        Fn::GetAtt:
-          - EIP
-          - AllocationId
-
-  EIP:
-    Type: AWS::EC2::EIP
 
   PrivateRoute:
     Type: AWS::EC2::Route
@@ -103,13 +128,30 @@ Resources:
     Type: AWS::EC2::SubnetRouteTableAssociation
     Properties:
       SubnetId: !Ref PrivateSubnet1
-      RouteTableId: !Ref
+      RouteTableId: !Ref PrivateRouteTable
+
+  PrivateSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet2
+      RouteTableId: !Ref PrivateRouteTable
 
   ProfileWithRolesForOurApp:
     Type: AWS::IAM::InstanceProfile
     Properties: 
       Roles:
         - S3ReadOnlyEC2
+
+  LoadBalancerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security Group for Load Balancer
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
 
   LoadBalancer:
     Type: 'AWS::ElasticLoadBalancingV2::LoadBalancer'
@@ -128,7 +170,7 @@ Resources:
       Protocol: 'HTTP'
       DefaultActions:
         - Type: 'forward'
-          TargetGroupArn: !Ref TargetGroup
+          TargetGroupArn: !Ref MyTargetGroup
 
   MyTargetGroup:
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
@@ -145,6 +187,27 @@ Resources:
       HealthyThresholdCount: 5
       UnhealthyThresholdCount: 2
 
+  AppServerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security Group for the Application Server
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+      - Description: HTTP traffic from Load Balancer
+        IpProtocol: tcp
+        FromPort: 80
+        ToPort: 80
+        SourceSecurityGroupId: !GetAtt LoadBalancerSecurityGroup.GroupId
+      - Description: HTTPS traffic from Load Balancer
+        IpProtocol: tcp
+        FromPort: 443
+        ToPort: 443
+        SourceSecurityGroupId: !GetAtt LoadBalancerSecurityGroup.GroupId
+      SecurityGroupEgress:
+      - Description: Allow all outbound traffic
+        IpProtocol: -1
+        CidrIp: 0.0.0.0/0
+
   MyLaunchTemplate:
     Type: AWS::EC2::LaunchTemplate
     Properties: 
@@ -156,11 +219,10 @@ Resources:
             apt-get install apache2 -y
             systemctl start apache2.service
             cd /var/www/html
-            echo "Udacity Demo Web Server Up and Running!" > index.html
-        ImageId: ami-005bdb005fb00e791
-        KeyName: VocareumKey2
+            echo "it works! Udagram, Udacity" > index.html
+        ImageId: ami-053b0d53c279acc90
         SecurityGroupIds:
-          - sg-020ac9d8f54335c66
+          - !Ref AppServerSecurityGroup
         InstanceType: t3.small
         BlockDeviceMappings:
         - DeviceName: "/dev/sdk"
@@ -170,7 +232,9 @@ Resources:
   AutoScalingGroup:
     Type: AWS::AutoScaling::AutoScalingGroup
     Properties:
-      AvailabilityZones: !GetAZs ''
+      AvailabilityZones: 
+        - !GetAtt PrivateSubnet1.AvailabilityZone
+        - !GetAtt PrivateSubnet2.AvailabilityZone
       LaunchTemplate:
         LaunchTemplateId: !Ref MyLaunchTemplate
         Version: !GetAtt MyLaunchTemplate.LatestVersionNumber
@@ -181,24 +245,16 @@ Resources:
         - !Ref PrivateSubnet2
       TargetGroupARNs:
         - !Ref MyTargetGroup
-  
 
-Outputs: 
-  # This is also optional.
-  # Bonus points for useful outputs!
-  # for example, if you create a Load Balancer
-  # it's nice to output the URL to it here, so that we don't have to go to the console to get it.
+Outputs:
+  VPC:
+    Description: VPC ID
+    Value: !Ref VPC
+    Export:
+      Name: !Sub "${AWS::StackName}-VPCID"
 
-# Sample UserData
-# When creating your Launch Configuration, you may need a UserData script
-# here's one that you can use for Ubuntu Linux that will:
-# Install Apache Web Server, Start it, and create an index.html that will be displayed
-# when you visit the IP address of this server with your web browser
-#Here it is:
-#
-#          #!/bin/bash
-#          apt-get update -y
-#          apt-get install apache2 -y
-#          systemctl start apache2.service
-#          cd /var/www/html
-#          echo "Udacity Demo Web Server Up and Running!" > index.html
+  LoadBalancerURL:
+    Description: The URL of the load balancer
+    Value: !Sub http://${LoadBalancer.DNSName}
+    Export:
+      Name: LoadBalancerURL

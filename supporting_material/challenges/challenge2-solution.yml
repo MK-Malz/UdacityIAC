@@ -97,6 +97,7 @@ Resources:
        DestinationCidrBlock: 0.0.0.0/0
        GatewayId:
          Ref: InternetGW
+         
   PrivateInternetOutboundRoute:
     Type: AWS::EC2::Route
     Properties:
