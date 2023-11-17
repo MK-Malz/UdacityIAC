@@ -1,0 +1,168 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "Network infrastructure for Udagram"
+
+Parameters:
+  VpcCidr:
+    Description: VPC CIDR block
+    Type: String
+    Default: 10.0.0.0/16
+  PublicSubnet1Cidr:
+    Description: Public subnet CIDR block
+    Type: String
+    Default: 10.0.1.0/24
+  PublicSubnet2Cidr:
+    Description: Public subnet CIDR block
+    Type: String
+    Default: 10.0.2.0/24
+  PrivateSubnet1Cidr:
+    Description: Private subnet CIDR block
+    Type: String
+    Default: 10.0.3.0/24
+  PrivateSubnet2Cidr:
+    Description: Private subnet CIDR block
+    Type: String
+    Default: 10.0.4.0/24
+
+Resources:
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref VpcCidr
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+
+  PublicSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: !Select [0, !GetAZs '']
+      VpcId: !Ref VPC
+      CidrBlock: !Ref PublicSubnet1Cidr
+
+  PublicSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: !Select [1, !GetAZs '']
+      VpcId: !Ref VPC
+      CidrBlock: !Ref PublicSubnet2Cidr
+
+  PrivateSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: !Select [0, !GetAZs '']
+      VpcId: !Ref VPC
+      CidrBlock: !Ref PrivateSubnet1Cidr
+
+  PrivateSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: !Select [1, !GetAZs '']
+      VpcId: !Ref VPC
+      CidrBlock: !Ref PrivateSubnet2Cidr
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+
+  VPCGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+
+  EIP:
+    Type: AWS::EC2::EIP
+
+  NATGateway:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      SubnetId: !Ref PublicSubnet1
+      AllocationId:
+        Fn::GetAtt:
+          - EIP
+          - AllocationId
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+
+  PrivateRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+
+  PublicRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  PrivateRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NATGateway
+
+  PublicSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet1
+      RouteTableId: !Ref PublicRouteTable
+
+  PublicSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet2
+      RouteTableId: !Ref PublicRouteTable
+
+  PrivateSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet1
+      RouteTableId: !Ref PrivateRouteTable
+
+  PrivateSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet2
+      RouteTableId: !Ref PrivateRouteTable
+
+Outputs:
+  VPC:
+    Description: VPC ID
+    Value: !Ref VPC
+    Export:
+      Name: !Sub "${AWS::StackName}-VPCID"
+
+Outputs:
+  VpcId:
+    Description: The ID of the VPC
+    Value: !Ref VPC
+    Export:
+      Name: !Sub "${AWS::StackName}-VPCID"
+
+  PublicSubnet1Id:
+    Description: The ID of the first public subnet
+    Value: !Ref PublicSubnet1
+    Export:
+      Name: !Sub "${AWS::StackName}-PublicSubnet1ID"
+
+  PublicSubnet2Id:
+    Description: The ID of the second public subnet
+    Value: !Ref PublicSubnet2
+    Export:
+      Name: !Sub "${AWS::StackName}-PublicSubnet2ID"
+
+  PrivateSubnet1Id:
+    Description: The ID of the first private subnet
+    Value: !Ref PrivateSubnet1
+    Export:
+      Name: !Sub "${AWS::StackName}-PrivateSubnet1ID"
+
+  PrivateSubnet2Id:
+    Description: The ID of the second private subnet
+    Value: !Ref PrivateSubnet2
+    Export:
+      Name: !Sub "${AWS::StackName}-PrivateSubnet2ID"
+

@@ -1,0 +1,38 @@
+[
+    {
+        "ParameterKey": "VPC",
+        "ParameterValue": "vpc-0ce944562e81585f3"
+    },
+    {
+        "ParameterKey": "PublicSubnet1",
+        "ParameterValue": "subnet-0e0fe2603045c05d2"
+    },
+    {
+        "ParameterKey": "PublicSubnet2",
+        "ParameterValue": "subnet-029addabf06430ae4"
+    },
+    {
+        "ParameterKey": "PrivateSubnet1",
+        "ParameterValue": "subnet-0232405f58334478b"
+    },
+    {
+        "ParameterKey": "PrivateSubnet2",
+        "ParameterValue": "subnet-047c4f802b4f1c6f6"
+    },
+    {
+        "ParameterKey": "ImageId",
+        "ParameterValue": "ami-06dd92ecc74fdfb36"
+    },
+    {
+        "ParameterKey": "InstanceType",
+        "ParameterValue": "t2.micro"
+    },
+    {
+        "ParameterKey": "MinSize",
+        "ParameterValue": "2"
+    },
+    {
+        "ParameterKey": "MaxSize",
+        "ParameterValue": "5"
+    }
+]
